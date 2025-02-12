@@ -1,0 +1,79 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix
+
+# Step 1: Load and Explore the Datasets
+df1 = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/customernew.csv', encoding='ISO-8859-1')
+df2 = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/productnew.csv', encoding='ISO-8859-1')
+df3 = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/transactionsnew.csv', encoding='ISO-8859-1')
+
+# Step 2: Data Cleaning & Preprocessing
+
+# Handle missing values in Company_Profit
+df1['Company_Profit'] = df1['Company_Profit'].fillna(df1['Company_Profit'].median())
+
+# Remove rows with missing Product_ID
+df2.dropna(subset=['Product_ID'], inplace=True)
+
+# Convert Product_Price to numeric
+df2['Product_Price'] = df2['Product_Price'].str.replace(',', '').astype(float)
+
+# Clean Quantity column in transactions
+df3['Quantity'] = pd.to_numeric(df3['Quantity'], errors='coerce')
+df3.dropna(subset=['Quantity'], inplace=True)
+
+# Convert Transaction_Date to datetime format
+df3['Transaction_Date'] = pd.to_datetime(df3['Transaction_Date'], format='%d-%m-%Y')
+
+# Standardize Company_ID naming across datasets
+df1.rename(columns={'Company_ID': 'CompanyID'}, inplace=True)
+df3.rename(columns={'Company_ID': 'CompanyID'}, inplace=True)
+
+# Step 3: Feature Engineering
+
+# Total spending per company
+customer_spending = df3.groupby('CompanyID')['Total_Cost'].sum().reset_index()
+customer_spending.rename(columns={'Total_Cost': 'Total_Spending'}, inplace=True)
+
+# Average spending per transaction
+avg_spending = df3.groupby('CompanyID')['Total_Cost'].mean().reset_index()
+avg_spending.rename(columns={'Total_Cost': 'Avg_Spending'}, inplace=True)
+
+# Number of transactions per company
+transaction_count = df3.groupby('CompanyID')['Transaction_ID'].count().reset_index()
+transaction_count.rename(columns={'Transaction_ID': 'Transaction_Count'}, inplace=True)
+
+# Merge features with customer data
+df1 = df1.merge(customer_spending, on='CompanyID', how='left')
+df1 = df1.merge(transaction_count, on='CompanyID', how='left')
+df1 = df1.merge(avg_spending, on='CompanyID', how='left')
+
+# Create target variable Has_Purchased
+df1['Has_Purchased'] = df1['Transaction_Count'].apply(lambda x: 1 if x > 0 else 0)
+
+# Step 4: Building the Predictive Model
+
+# Select features and target
+features = ['Company_Profit', 'Total_Spending', 'Avg_Spending', 'Transaction_Count']
+target = 'Has_Purchased'
+
+X = df1[features].fillna(0)
+y = df1[target]
+
+# Split data with stratification to maintain class balance
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Train Random Forest Classifier
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Make predictions
+y_pred = model.predict(X_test)
+
+# Step 5: Model Evaluation
+
+# Evaluate using confusion matrix and classification report
+labels = [0, 1]  # Ensure both classes are represented
+print(confusion_matrix(y_test, y_pred, labels=labels))
+print(classification_report(y_test, y_pred, labels=labels))
