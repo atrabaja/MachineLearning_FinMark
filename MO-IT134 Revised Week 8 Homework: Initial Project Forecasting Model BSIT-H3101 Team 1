@@ -1,0 +1,120 @@
+# Week 8 Homework: Initial Project Forecasting Model
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.arima.model import ARIMA
+from pmdarima import auto_arima
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+# **Step 1: Load Datasets**
+df_transactions = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/transactionsnew.csv')
+df_products = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/productnew.csv')
+
+# Display loaded data
+print("Transactions Data:")
+print(df_transactions.head())
+print("Products Data:")
+print(df_products.head())
+
+"""Explanation:
+- Transaction data contains customer purchases.
+- Product data contains product details and prices.
+- Displayed first few rows of each dataset for initial inspection.
+"""
+
+# **Step 2: Data Cleaning and Preparation**
+df_products.columns = df_products.columns.str.strip()
+df_transactions.columns = df_transactions.columns.str.strip()
+df_products = df_products.drop_duplicates(subset=['Product_ID'])
+df_products['Product_Price'] = pd.to_numeric(df_products['Product_Price'].str.replace(',', ''), errors='coerce')
+df_transactions.replace('#DIV/0!', np.nan, inplace=True)
+df_transactions.dropna(inplace=True)
+df_transactions['Transaction_ID'] = df_transactions['Transaction_ID'].astype(int)
+df_transactions['Quantity'] = df_transactions['Quantity'].astype(int)
+df_transactions['Transaction_Date'] = pd.to_datetime(df_transactions['Transaction_Date'], dayfirst=True)
+df_transactions['week'] = df_transactions['Transaction_Date'].dt.isocalendar().week
+df_transactions['month'] = df_transactions['Transaction_Date'].dt.month
+
+# Display cleaned data
+print("Cleaned Transactions Data:")
+print(df_transactions.head())
+"""Explanation:
+- Cleaned missing values, converted data types, and extracted week and month.
+- Displayed first few rows after cleaning.
+"""
+
+# **Step 3: Data Merging and Feature Engineering**
+product_price_map = df_products.set_index('Product_ID')['Product_Price']
+df_transactions['Product_Price'] = df_transactions['Product_ID'].map(product_price_map)
+df_transactions.drop(columns=['Product_ID'], inplace=True)
+df_transactions['total_sales'] = df_transactions['Quantity'] * df_transactions['Product_Price']
+df_weekly_sales = df_transactions.groupby(['week'])['total_sales'].sum().reset_index()
+df_monthly_sales = df_transactions.groupby(['month'])['total_sales'].sum().reset_index()
+
+# Display merged and engineered data
+print("Weekly Sales Data:")
+print(df_weekly_sales)
+print("Monthly Sales Data:")
+print(df_monthly_sales)
+"""Explanation:
+- Merged datasets, calculated total sales, and aggregated weekly and monthly sales.
+- Displayed final weekly and monthly sales data.
+"""
+
+# **Step 4: Data Visualization**
+plt.figure(figsize=(10,6))
+plt.plot(df_weekly_sales['week'], df_weekly_sales['total_sales'], marker='o')
+plt.title('Weekly Sales Trend')
+plt.xlabel('Week')
+plt.ylabel('Total Sales')
+plt.grid(True)
+plt.show()
+
+plt.figure(figsize=(10,6))
+plt.plot(df_monthly_sales['month'], df_monthly_sales['total_sales'], marker='o')
+plt.title('Monthly Sales Trend')
+plt.xlabel('Month')
+plt.ylabel('Total Sales')
+plt.grid(True)
+plt.show()
+"""Explanation:
+- Visualized weekly and monthly sales trends to observe patterns.
+"""
+
+# **Step 5: Time Series Decomposition**
+decomposition = seasonal_decompose(df_weekly_sales['total_sales'], model='additive', period=4)
+decomposition.plot()
+plt.show()
+"""Explanation:
+- Decomposed weekly sales into trend, seasonality, and residual components.
+- Provided better insights into underlying patterns.
+"""
+
+# **Step 6: ARIMA Modeling and Forecasting**
+stepwise_fit = auto_arima(df_weekly_sales['total_sales'], seasonal=True, m=4, trace=True, suppress_warnings=True, max_D=1, seasonal_test='ch', error_action='ignore', simple_differencing=True)
+
+model = ARIMA(df_weekly_sales['total_sales'], order=stepwise_fit.order)
+model_fit = model.fit()
+
+# Display ARIMA summary
+print("ARIMA Model Summary:")
+print(model_fit.summary())
+
+forecast = model_fit.predict(start=len(df_weekly_sales), end=len(df_weekly_sales)+23)  # Forecast for 6 months
+print("Sales Forecast for Next 6 Months:")
+print(forecast)
+
+"""Explanation:
+- Adjusted ARIMA to use weekly data for better model robustness.
+- Decomposed time series to visualize underlying trends.
+- Forecasted sales for the next 6 months based on weekly trends.
+"""
+
+# **Conclusion:**
+"""
+- Each step has detailed explanations and displayed outputs.
+- Data is now aggregated weekly instead of monthly to capture irregularities.
+- Added decomposition to show trend, seasonality, and irregularities.
+- ARIMA model forecasts next 6 months based on weekly trends.
+"""
