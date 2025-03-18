@@ -1,0 +1,152 @@
+# Week 7 Homework: Initial Sales Forecasting Model for FinMark
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.arima.model import ARIMA
+from pmdarima import auto_arima
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+# ## Step 1: Load Datasets
+# Load the transactions and products dataset
+df_transactions = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/transactionsnew.csv')
+df_products = pd.read_csv('/Users/atrabaja/Documents/FinMark_MachineLearning/productnew.csv')
+
+# Display first few rows of datasets
+print("Transactions Data:")
+print(df_transactions.head())
+print("Products Data:")
+print(df_products.head())
+
+"""
+### Insights:
+- The transactions dataset contains recorded purchases, including transaction dates, quantities, and product IDs.
+- The products dataset provides details about product names and prices.
+- Understanding the structure of both datasets helps determine necessary preprocessing and feature engineering steps.
+"""
+
+# ## Step 2: Data Cleaning and Preparation
+# Ensure column names are stripped of spaces
+df_products.columns = df_products.columns.str.strip()
+df_transactions.columns = df_transactions.columns.str.strip()
+
+# Remove duplicate Product_IDs and convert Product_Price to numeric
+df_products = df_products.drop_duplicates(subset=['Product_ID'])
+df_products['Product_Price'] = pd.to_numeric(df_products['Product_Price'].str.replace(',', ''), errors='coerce')
+
+# Handle missing values and data types
+df_transactions.replace('#DIV/0!', np.nan, inplace=True)
+df_transactions.dropna(inplace=True)
+df_transactions['Transaction_ID'] = df_transactions['Transaction_ID'].astype(int)
+df_transactions['Quantity'] = df_transactions['Quantity'].astype(int)
+df_transactions['Transaction_Date'] = pd.to_datetime(df_transactions['Transaction_Date'], dayfirst=True)
+
+# Extract week and month for time-series analysis
+df_transactions['week'] = df_transactions['Transaction_Date'].dt.isocalendar().week
+df_transactions['month'] = df_transactions['Transaction_Date'].dt.month
+
+print("Cleaned Transactions Data:")
+print(df_transactions.head())
+
+"""
+### Insights:
+- The dataset was cleaned to remove inconsistencies such as missing values and incorrect data formats.
+- Extracting the 'week' and 'month' from transaction dates allows us to conduct weekly and monthly sales analysis.
+- Converting numerical fields ensures calculations are accurate and prevent type-related errors.
+"""
+
+# ## Step 3: Data Merging and Feature Engineering
+# Map Product Price based on Product_ID
+product_price_map = df_products.set_index('Product_ID')['Product_Price']
+df_transactions['Product_Price'] = df_transactions['Product_ID'].map(product_price_map)
+
+# Drop unnecessary column
+df_transactions.drop(columns=['Product_ID'], inplace=True)
+
+# Calculate total sales
+df_transactions['total_sales'] = df_transactions['Quantity'] * df_transactions['Product_Price']
+
+# Aggregate sales by week and month
+df_weekly_sales = df_transactions.groupby(['week'])['total_sales'].sum().reset_index()
+df_monthly_sales = df_transactions.groupby(['month'])['total_sales'].sum().reset_index()
+
+print("Weekly Sales Data:")
+print(df_weekly_sales.head())
+
+"""
+### Insights:
+- The dataset was merged to associate each transaction with its product price, ensuring accurate total sales calculations.
+- Aggregating sales data weekly and monthly provides flexibility in analyzing patterns and trends at different granularities.
+- By removing redundant columns, we optimize the dataset for better processing efficiency.
+"""
+
+# ## Step 4: Data Visualization
+# Weekly Sales Trend
+plt.figure(figsize=(10,6))
+plt.plot(df_weekly_sales['week'], df_weekly_sales['total_sales'], marker='o')
+plt.title('Weekly Sales Trend')
+plt.xlabel('Week')
+plt.ylabel('Total Sales')
+plt.grid(True)
+plt.show()
+
+# Monthly Sales Trend
+plt.figure(figsize=(10,6))
+plt.plot(df_monthly_sales['month'], df_monthly_sales['total_sales'], marker='o')
+plt.title('Monthly Sales Trend')
+plt.xlabel('Month')
+plt.ylabel('Total Sales')
+plt.grid(True)
+plt.show()
+
+"""
+### Insights:
+- The weekly sales trend visualization allows us to identify seasonal fluctuations, irregular spikes, and weekly purchasing patterns.
+- The monthly sales trend visualization provides a broader view of long-term patterns and overall sales performance.
+- These visualizations help in detecting anomalies and making better forecasting decisions.
+"""
+
+# ## Step 5: Time Series Decomposition
+# Decomposing the weekly sales data
+decomposition = seasonal_decompose(df_weekly_sales['total_sales'], model='additive', period=4)
+decomposition.plot()
+plt.show()
+
+"""
+### Insights:
+- Decomposing sales data into trend, seasonality, and residuals provides insights into the underlying structure of sales performance.
+- The trend component indicates the general direction of sales growth or decline.
+- The seasonal component captures regular patterns, such as increased sales in certain weeks.
+- The residual component shows random fluctuations that are not explained by trend or seasonality.
+"""
+
+# ## Step 6: ARIMA Modeling and Forecasting
+# Fit ARIMA model using auto_arima to determine best parameters
+stepwise_fit = auto_arima(df_weekly_sales['total_sales'], seasonal=True, m=4, trace=True, suppress_warnings=True, max_D=1, seasonal_test='ch', error_action='ignore', simple_differencing=True)
+
+model = ARIMA(df_weekly_sales['total_sales'], order=stepwise_fit.order)
+model_fit = model.fit()
+
+print("ARIMA Model Summary:")
+print(model_fit.summary())
+
+# Forecasting sales for next 6 months (24 weeks)
+forecast = model_fit.predict(start=len(df_weekly_sales), end=len(df_weekly_sales)+23)
+
+# Plot forecasted sales
+plt.figure(figsize=(10,6))
+plt.plot(df_weekly_sales['week'], df_weekly_sales['total_sales'], label='Actual Sales')
+plt.plot(range(len(df_weekly_sales), len(df_weekly_sales)+24), forecast, label='Forecasted Sales', linestyle='dashed', color='red')
+plt.title('Sales Forecast for Next 6 Months')
+plt.xlabel('Week')
+plt.ylabel('Total Sales')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+"""
+### Insights:
+- The ARIMA model provides a data-driven approach to forecasting future sales trends.
+- Forecasting for the next six months (24 weeks) helps with strategic planning and inventory management.
+- Comparing actual vs. forecasted values allows for performance evaluation of the predictive model.
+"""
